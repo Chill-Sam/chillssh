@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -Wpedantic -std=c23 -g
+CFLAGS = -Wall -Wextra -Wpedantic -std=c23 -g -D_POSIX_C_SOURCE=200809L
 INCLUDES = -Iinclude
 SRC = $(wildcard src/*.c)
 OBJ = $(SRC:.c=.o)
