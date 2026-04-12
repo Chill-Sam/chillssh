@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jonathan Wåhrenberg <jonathan@wahrenberg.com>
 #pragma once
 
 #include "conn.h"

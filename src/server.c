@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jonathan Wåhrenberg <jonathan@wahrenberg.com>
 #include "server.h"
 #include "conn.h"
 #include "epoll_ctx.h"
