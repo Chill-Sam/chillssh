@@ -16,8 +16,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define MAX_EVENTS  64
-#define MAX_CLIENTS 64
+#define MAX_EVENTS 64
 
 typedef struct server_t {
     epoll_ctx_t self_ctx;
@@ -30,6 +29,8 @@ typedef struct server_t {
 
     int last_errno;
 } server_t;
+
+static server_t g_server;
 
 const char *server_status_str(server_status_t s) {
     switch (s) {
@@ -84,17 +85,12 @@ static void server_untrack_conn(server_t *s, conn_t *c) {
 server_t *server_create(uint16_t port) {
     assert(port > 0);
 
-    server_t *server = malloc(sizeof(server_t));
-    if (server == NULL) {
-        return NULL;
-    }
-
-    *server = (server_t){.port = port, .fd = -1, .epoll_fd = -1};
-    return server;
+    g_server = (server_t){.port = port, .fd = -1, .epoll_fd = -1};
+    return &g_server;
 }
 
 void server_destroy(server_t *s) {
-    assert(s != NULL);
+    assert(s == &g_server);
 
     if (s->epoll_fd != -1) {
         for (int i = 0; i < MAX_CLIENTS; i++) {

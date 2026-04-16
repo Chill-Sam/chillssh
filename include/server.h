@@ -8,6 +8,8 @@
 #include <stdint.h>
 #include <string.h> // IWYU pragma: keep
 
+#define MAX_CLIENTS 64
+
 typedef struct server_t server_t;
 
 typedef enum server_status_t {
