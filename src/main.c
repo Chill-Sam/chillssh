@@ -13,13 +13,12 @@ static volatile sig_atomic_t running = 1;
 
 static void handle_stop_signal(int signum) {
     (void)signum;
-    LOG_INFO("Received stop signal, shutting down...");
     running = 0;
 }
 
 static bool setup_signals(void) {
     struct sigaction sa;
-    memset(&sa, 0, sizeof(sa));
+    sigemptyset(&sa.sa_mask);
     sa.sa_handler = handle_stop_signal;
     sa.sa_flags   = 0; // no SA_RESTART — we want epoll_wait to return EINTR
 
@@ -63,17 +62,6 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    if (signal(SIGINT, handle_stop_signal) == SIG_ERR) {
-        LOG_ERROR("signal() failed for SIGINT: %s", strerror(errno));
-        server_destroy(server);
-        return EXIT_FAILURE;
-    }
-    if (signal(SIGTERM, handle_stop_signal) == SIG_ERR) {
-        LOG_ERROR("signal() failed for SIGTERM: %s", strerror(errno));
-        server_destroy(server);
-        return EXIT_FAILURE;
-    }
-
     while (running) {
         server_status_t r = server_poll(server);
         if (r == SERVER_ERR_INTERRUPTED) {
@@ -85,6 +73,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    LOG_INFO("Received stop signal, shutting down...");
     server_destroy(server);
     return EXIT_SUCCESS;
 }

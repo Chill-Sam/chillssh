@@ -96,15 +96,22 @@ server_t *server_create(uint16_t port) {
 void server_destroy(server_t *s) {
     assert(s != NULL);
 
-    for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (s->clients[i] != NULL) {
-            if (epoll_ctl(s->epoll_fd, EPOLL_CTL_DEL, s->clients[i]->fd,
-                          NULL) == -1) {
-                LOG_WARNING("epoll_ctl() call failed: %s", strerror(errno));
+    if (s->epoll_fd != -1) {
+        for (int i = 0; i < MAX_CLIENTS; i++) {
+            if (s->clients[i] != NULL) {
+                if (epoll_ctl(s->epoll_fd, EPOLL_CTL_DEL, s->clients[i]->fd,
+                              NULL) == -1) {
+                    LOG_WARNING("epoll_ctl() call failed: %s", strerror(errno));
+                }
+                conn_destroy(s->clients[i]);
+                s->clients[i] = NULL;
             }
-            conn_destroy(s->clients[i]);
-            s->clients[i] = NULL;
         }
+
+        if (close(s->epoll_fd) == -1) {
+            LOG_WARNING("server_destroy: close() failed: %s", strerror(errno));
+        }
+        s->epoll_fd = -1;
     }
 
     if (s->fd != -1) {
@@ -112,13 +119,6 @@ void server_destroy(server_t *s) {
             LOG_WARNING("server_destroy: close() failed: %s", strerror(errno));
         }
         s->fd = -1;
-    }
-
-    if (s->epoll_fd != -1) {
-        if (close(s->epoll_fd) == -1) {
-            LOG_WARNING("server_destroy: close() failed: %s", strerror(errno));
-        }
-        s->epoll_fd = -1;
     }
 
     free(s);
@@ -144,10 +144,10 @@ server_status_t server_start(server_t *s) {
         return SERVER_ERR_SETSOCKOPT;
     }
 
-    struct sockaddr_in s_addr;
-    s_addr.sin_family      = AF_INET;
-    s_addr.sin_port        = htons(s->port);
-    s_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    struct sockaddr_in s_addr = {0};
+    s_addr.sin_family         = AF_INET;
+    s_addr.sin_port           = htons(s->port);
+    s_addr.sin_addr.s_addr    = htonl(INADDR_ANY);
 
     if (bind(s->fd, (struct sockaddr *)&s_addr, sizeof(s_addr)) == -1) {
         s->last_errno = errno;
@@ -194,14 +194,6 @@ server_status_t server_add_conn(server_t *s, conn_t *c) {
 
     s->last_errno = 0;
 
-    int slot      = server_find_free_slot(s);
-    if (slot == -1) {
-        LOG_WARNING("max connections reached, dropping connection");
-        return SERVER_ERR_MAX_CONNECTIONS;
-    }
-    s->clients[slot] = c;
-    s->client_count++;
-
     int flags;
     if ((flags = fcntl(c->fd, F_GETFL)) == -1) {
         s->last_errno = errno;
@@ -217,6 +209,14 @@ server_status_t server_add_conn(server_t *s, conn_t *c) {
         s->last_errno = errno;
         return SERVER_ERR_EPOLL_CTL;
     }
+
+    int slot = server_find_free_slot(s);
+    if (slot == -1) {
+        LOG_WARNING("max connections reached, dropping connection");
+        return SERVER_ERR_MAX_CONNECTIONS;
+    }
+    s->clients[slot] = c;
+    s->client_count++;
 
     return SERVER_OK;
 }
@@ -239,6 +239,65 @@ server_status_t server_remove_conn(server_t *s, conn_t *c) {
     server_untrack_conn(s, c);
 
     return SERVER_OK;
+}
+
+static void handle_server_event(server_t *s) {
+    int client_fd;
+    if ((client_fd = accept(s->fd, NULL, NULL)) == -1) {
+        if (errno == EAGAIN) {
+            return;
+        }
+        s->last_errno = errno;
+        LOG_WARNING("accept() call failed: %s", strerror(s->last_errno));
+        return;
+    }
+
+    conn_t *client = conn_create(client_fd);
+    if (client == NULL) {
+        s->last_errno = errno;
+        LOG_WARNING("conn_create() call failed: %s", strerror(s->last_errno));
+        close(client_fd);
+        return;
+    }
+
+    server_status_t ret = server_add_conn(s, client);
+    if (ret != SERVER_OK) {
+        LOG_SERVER_ERROR("server_add_conn", ret, s->last_errno);
+        conn_destroy(client);
+        return;
+    }
+
+    LOG_INFO("Connection recieved: %d", client_fd);
+}
+
+static void handle_conn_event(server_t *s, conn_t *conn) {
+    ssize_t bytes;
+    if ((bytes = read(conn->fd, conn->buf, sizeof(conn->buf))) == -1) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            return;
+        }
+
+        s->last_errno = errno;
+        LOG_WARNING("read() call failed: %s", strerror(s->last_errno));
+        server_remove_conn(s, conn);
+        conn_destroy(conn);
+        return;
+    }
+
+    if (bytes == 0) {
+        LOG_INFO("Client disconnected: %d", conn->fd);
+        server_remove_conn(s, conn);
+        conn_destroy(conn);
+    } else {
+        conn->buf_len = bytes;
+        if (write(conn->fd, conn->buf, conn->buf_len) == -1) {
+            s->last_errno = errno;
+            LOG_WARNING("write() call failed: %s", strerror(s->last_errno));
+            server_remove_conn(s, conn);
+            conn_destroy(conn);
+            return;
+        }
+    }
 }
 
 server_status_t server_poll(server_t *s) {
@@ -266,71 +325,13 @@ server_status_t server_poll(server_t *s) {
         switch (ctx->type) {
         case EPOLL_TYPE_SERVER: {
             assert(ctx->server != NULL);
-
-            int client_fd;
-            if ((client_fd = accept(s->fd, NULL, NULL)) == -1) {
-                if (errno == EAGAIN) {
-                    continue;
-                }
-                s->last_errno = errno;
-                LOG_WARNING("accept() call failed: %s",
-                            strerror(s->last_errno));
-                continue;
-            }
-
-            conn_t *client = conn_create(client_fd);
-            if (client == NULL) {
-                s->last_errno = errno;
-                LOG_WARNING("con_create() call failed: %s",
-                            strerror(s->last_errno));
-                close(client_fd);
-                continue;
-            }
-
-            server_status_t ret = server_add_conn(s, client);
-            if (ret != SERVER_OK) {
-                LOG_SERVER_ERROR("server_add_conn", ret, s->last_errno);
-                conn_destroy(client);
-                continue;
-            }
-
-            LOG_INFO("Connection recieved: %d", client_fd);
+            handle_server_event(ctx->server);
             break;
         }
 
         case EPOLL_TYPE_CONN: {
             assert(ctx->conn != NULL);
-            conn_t *conn = ctx->conn;
-
-            int bytes;
-            if ((bytes = read(conn->fd, conn->buf, sizeof(conn->buf))) == -1) {
-                if (errno == EAGAIN) {
-                    continue;
-                }
-
-                s->last_errno = errno;
-                LOG_WARNING("read() call failed: %s", strerror(s->last_errno));
-                server_remove_conn(s, conn);
-                conn_destroy(conn);
-                continue;
-            }
-
-            if (bytes == 0) {
-                LOG_INFO("Client disconnected: %d", conn->fd);
-                server_remove_conn(s, conn);
-                conn_destroy(conn);
-            } else {
-                conn->buf_len = bytes;
-                if (write(conn->fd, conn->buf, conn->buf_len) == -1) {
-                    s->last_errno = errno;
-                    LOG_WARNING("write() call failed: %s",
-                                strerror(s->last_errno));
-                    server_remove_conn(s, conn);
-                    conn_destroy(conn);
-                    continue;
-                }
-            }
-
+            handle_conn_event(s, ctx->conn);
             break;
         }
 

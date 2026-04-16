@@ -20,7 +20,6 @@ conn_t *conn_create(int fd) {
 
     *c = (conn_t){
         .fd = fd, .buf_len = 0, .ctx = {.type = EPOLL_TYPE_CONN, .conn = c}};
-    memset(c->buf, 0, sizeof(c->buf));
     return c;
 }
 
