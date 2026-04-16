@@ -29,6 +29,12 @@ static inline void log_set_level(log_level_t level) {
 static inline const char *log_timestamp(void) {
     static char buf[20];
     time_t now = time(NULL);
+    struct tm tm_buf;
+    if (localtime_r(&now, &tm_buf) == NULL)
+        return "XXXX-XX-XX ??:??:??";
+    if (strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm_buf) == 0)
+        return "XXXX-XX-XX ??:??:??";
+    return buf;
     strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", localtime(&now));
     return buf;
 }
@@ -37,8 +43,8 @@ static inline const char *log_timestamp(void) {
     do {                                                                       \
         if (CURRENT_LOG_LEVEL >= (level)) {                                    \
             fprintf(stderr, "%s[%s] [%s] %s:%d: " fmt LOG_COLOR_RESET "\n",    \
-                    color, log_timestamp(), label, __FILE__, __LINE__,         \
-                    ##__VA_ARGS__);                                            \
+                    color, log_timestamp(), label, __FILE__,                   \
+                    __LINE__ __VA_OPT__(, ) __VA_ARGS__);                      \
         }                                                                      \
     } while (0)
 
@@ -46,16 +52,17 @@ static inline const char *log_timestamp(void) {
     do {                                                                       \
         if (CURRENT_LOG_LEVEL >= (level)) {                                    \
             fprintf(stderr, "%s[%s] [%s] " fmt LOG_COLOR_RESET "\n", color,    \
-                    log_timestamp(), label, ##__VA_ARGS__);                    \
+                    log_timestamp(), label __VA_OPT__(, ) __VA_ARGS__);        \
         }                                                                      \
     } while (0)
 
 /* Public macros */
 #define LOG_ERROR(fmt, ...)                                                    \
-    LOG_BASE_LOCATED(LOG_LEVEL_ERROR, LOG_COLOR_RED, "ERROR", fmt,             \
-                     ##__VA_ARGS__)
+    LOG_BASE_LOCATED(LOG_LEVEL_ERROR, LOG_COLOR_RED, "ERROR",                  \
+                     fmt __VA_OPT__(, ) __VA_ARGS__)
 #define LOG_WARNING(fmt, ...)                                                  \
-    LOG_BASE_LOCATED(LOG_LEVEL_WARNING, LOG_COLOR_YELLOW, "WARN", fmt,         \
-                     ##__VA_ARGS__)
+    LOG_BASE_LOCATED(LOG_LEVEL_WARNING, LOG_COLOR_YELLOW, "WARN",              \
+                     fmt __VA_OPT__(, ) __VA_ARGS__)
 #define LOG_INFO(fmt, ...)                                                     \
-    LOG_BASE(LOG_LEVEL_INFO, LOG_COLOR_CYAN, "INFO", fmt, ##__VA_ARGS__)
+    LOG_BASE(LOG_LEVEL_INFO, LOG_COLOR_CYAN, "INFO",                           \
+             fmt __VA_OPT__(, ) __VA_ARGS__)
