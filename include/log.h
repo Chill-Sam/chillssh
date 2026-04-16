@@ -35,8 +35,6 @@ static inline const char *log_timestamp(void) {
     if (strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm_buf) == 0)
         return "XXXX-XX-XX ??:??:??";
     return buf;
-    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", localtime(&now));
-    return buf;
 }
 
 #define LOG_BASE_LOCATED(level, color, label, fmt, ...)                        \

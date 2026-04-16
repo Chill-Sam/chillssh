@@ -33,6 +33,8 @@ typedef struct server_t {
 static server_t g_server;
 
 const char *server_status_str(server_status_t s) {
+    assert(s >= SERVER_OK && s <= SERVER_ERR_MAX_CONNECTIONS);
+
     switch (s) {
     case SERVER_OK:
         return "ok";
@@ -64,6 +66,8 @@ const char *server_status_str(server_status_t s) {
 }
 
 static int server_find_free_slot(server_t *s) {
+    assert(s != NULL);
+
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (s->clients[i] == NULL)
             return i;
@@ -72,6 +76,10 @@ static int server_find_free_slot(server_t *s) {
 }
 
 static void server_untrack_conn(server_t *s, conn_t *c) {
+    assert(s != NULL);
+    assert(c != NULL);
+    assert(s->client_count > 0);
+
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (s->clients[i] == c) {
             s->clients[i] = NULL;
@@ -116,8 +124,6 @@ void server_destroy(server_t *s) {
         }
         s->fd = -1;
     }
-
-    free(s);
 }
 
 server_status_t server_start(server_t *s) {
@@ -177,6 +183,8 @@ server_status_t server_start(server_t *s) {
         return SERVER_ERR_EPOLL_CTL;
     }
 
+    assert(s->fd != -1);
+    assert(s->epoll_fd != -1);
     return SERVER_OK;
 }
 
@@ -214,6 +222,8 @@ server_status_t server_add_conn(server_t *s, conn_t *c) {
     s->clients[slot] = c;
     s->client_count++;
 
+    assert(s->client_count > 0);
+    assert(s->clients[slot] == c);
     return SERVER_OK;
 }
 
@@ -224,6 +234,7 @@ server_status_t server_remove_conn(server_t *s, conn_t *c) {
     assert(s->port > 0);
     assert(c != NULL);
     assert(c->fd != -1);
+    assert(s->client_count > 0);
 
     s->last_errno = 0;
 
@@ -238,6 +249,9 @@ server_status_t server_remove_conn(server_t *s, conn_t *c) {
 }
 
 static void handle_server_event(server_t *s) {
+    assert(s != NULL);
+    assert(s->fd != -1);
+
     int client_fd;
     if ((client_fd = accept(s->fd, NULL, NULL)) == -1) {
         if (errno == EAGAIN) {
@@ -263,10 +277,16 @@ static void handle_server_event(server_t *s) {
         return;
     }
 
-    LOG_INFO("Connection recieved: %d", client_fd);
+    LOG_INFO("Connection received: %d", client_fd);
 }
 
 static void handle_conn_event(server_t *s, conn_t *conn) {
+    assert(s != NULL);
+    assert(conn != NULL);
+    assert(conn->fd != -1);
+    assert(conn->buf_len <= BUF_SIZE);
+    assert(s->client_count > 0);
+
     ssize_t bytes;
     if ((bytes = read(conn->fd, conn->buf, sizeof(conn->buf))) == -1) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -301,6 +321,7 @@ server_status_t server_poll(server_t *s) {
     assert(s->fd != -1);
     assert(s->epoll_fd != -1);
     assert(s->port > 0);
+    assert(s->client_count <= MAX_CLIENTS);
 
     s->last_errno = 0;
 
@@ -342,5 +363,6 @@ server_status_t server_poll(server_t *s) {
 
 int server_get_errno(const server_t *s) {
     assert(s != NULL);
+    assert(s->last_errno >= 0);
     return s->last_errno;
 }

@@ -3,6 +3,7 @@
 #include "log.h"
 #include "server.h"
 
+#include <assert.h>
 #include <errno.h> // IWYU pragma: keep
 #include <signal.h>
 #include <stdlib.h>
@@ -17,7 +18,7 @@ static void handle_stop_signal(int signum) {
 }
 
 static bool setup_signals(void) {
-    struct sigaction sa;
+    struct sigaction sa = {0};
     sigemptyset(&sa.sa_mask);
     sa.sa_handler = handle_stop_signal;
     sa.sa_flags   = 0; // no SA_RESTART — we want epoll_wait to return EINTR
@@ -49,11 +50,7 @@ int main(int argc, char *argv[]) {
     }
 
     server_t *server = server_create(port);
-    if (server == NULL) {
-        int err = errno;
-        LOG_ERROR("server_create() call failed: %s", strerror(err));
-        return EXIT_FAILURE;
-    }
+    assert(server != NULL);
 
     server_status_t ret = server_start(server);
     if (ret != SERVER_OK) {
