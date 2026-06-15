@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -Wpedantic -std=c23 -g -D_POSIX_C_SOURCE=200809L
 INCLUDES = -Iinclude
-SRC = $(wildcard src/*.c)
+SRC = $(shell find src -name '*.c')
 OBJ = $(SRC:.c=.o)
 TARGET = chillssh
 
@@ -17,4 +17,8 @@ $(TARGET): $(OBJ)
 clean:
 	rm -f $(TARGET)
 
-.PHONY: all clean
+compile_commands:
+	make clean
+	bear -- make
+
+.PHONY: all clean compile_commands

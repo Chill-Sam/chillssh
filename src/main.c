@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Jonathan Wåhrenberg <jonathan@wahrenberg.com>
+#include "crypto/chacha20.h"
 #include "log.h"
 #include "server.h"
 
@@ -48,6 +49,8 @@ int main(int argc, char *argv[]) {
     if (!setup_signals()) {
         return EXIT_FAILURE;
     }
+
+    chacha20_selftest();
 
     server_t *server = server_create(port);
     assert(server != NULL);
