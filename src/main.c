@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Jonathan Wåhrenberg <jonathan@wahrenberg.com>
+
 #include "crypto/chacha20.h"
+#include "crypto/poly1305.h"
 #include "log.h"
 #include "server.h"
 
@@ -50,7 +52,10 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
+#ifndef NDEBUG
     chacha20_selftest();
+    poly1305_selftest();
+#endif
 
     server_t *server = server_create(port);
     assert(server != NULL);
